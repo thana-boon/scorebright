@@ -1,0 +1,179 @@
+// score_app — ฐานข้อมูลของระบบบันทึกคะแนน (แยกจาก school_app ที่อ่านอย่างเดียว)
+// ตาราง school_app (students/users/academic_years) เข้าถึงผ่าน raw query ใน src/lib/school-app.ts
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  staff
+}
+
+/// บัญชีผู้ใช้ของ ScoreBright เอง (แยกจาก school_app.users โดยสิ้นเชิง)
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique @db.VarChar(50)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  displayName  String   @map("display_name") @db.VarChar(100)
+  role         UserRole @default(staff)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  subjects Subject[]
+
+  @@map("users")
+}
+
+/// singleton (id = 1 เสมอ): ปี+เทอมที่ระบบกำลังทำงานอยู่ ทุก query ต้อง scope ตามนี้
+model AppSetting {
+  id              Int      @id @default(1)
+  workingYearId   Int      @map("working_year_id") /// school_app.academic_years.id
+  workingYearBE   Int      @map("working_year_be") /// เช่น 2569
+  workingSemester Int      @map("working_semester") /// 1 | 2
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}
+
+model Subject {
+  id             Int      @id @default(autoincrement())
+  subjectCode    String   @map("subject_code") @db.VarChar(20)
+  subjectName    String   @map("subject_name") @db.VarChar(200)
+  classLevel     String   @map("class_level") @db.VarChar(10) /// 'ป.1'..'ม.6'
+  semester       Int /// 1 | 2
+  academicYearBE Int      @map("academic_year_be") /// เช่น 2569
+  teacherId      Int      @map("teacher_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  teacher     User          @relation(fields: [teacherId], references: [id])
+  rooms       SubjectRoom[]
+  scoreConfig ScoreConfig?
+  scoreItems  ScoreItem[]
+  traitScores TraitScore[]
+
+  @@unique([subjectCode, classLevel, semester, academicYearBE, teacherId])
+  @@index([teacherId, academicYearBE, semester])
+  @@map("subjects")
+}
+
+/// ห้องที่วิชานี้สอน (ครูเลือกเอง) — หัวข้อ/สัดส่วนผูกระดับชั้น ใช้ร่วมทุกห้อง
+model SubjectRoom {
+  id        Int     @id @default(autoincrement())
+  subjectId Int     @map("subject_id")
+  classRoom Int     @map("class_room")
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([subjectId, classRoom])
+  @@map("subject_rooms")
+}
+
+/// สัดส่วนคะแนน 4 ช่วง + % ตัดผ่าน — รวม 4 ช่วงแรกต้อง = 100 (validate ฝั่งแอป)
+model ScoreConfig {
+  id              Int     @id @default(autoincrement())
+  subjectId       Int     @unique @map("subject_id")
+  ratioBeforeMid  Int     @map("ratio_before_mid")
+  ratioMid        Int     @map("ratio_mid")
+  ratioAfterMid   Int     @map("ratio_after_mid")
+  ratioFinal      Int     @map("ratio_final")
+  passPercent     Int     @map("pass_percent")
+  subject         Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@map("score_configs")
+}
+
+enum ScoreCategory {
+  BEFORE_MID /// คะแนนเก็บก่อนกลางภาค สูงสุด 20 ช่อง
+  MID /// กลางภาค สูงสุด 10 ช่อง
+  AFTER_MID /// เก็บหลังกลางภาค สูงสุด 20 ช่อง
+  FINAL /// ปลายภาค สูงสุด 10 ช่อง
+}
+
+/// หัวข้อคะแนน — ชื่อจะกลายเป็นหัวคอลัมน์ใน SchoolBright (ห้าม = + - @ ขึ้นต้น)
+/// ชื่อซ้ำกันได้ทั้งในและข้ามหมวด — SchoolBright รับไฟล์ที่หัวข้อชื่อซ้ำได้ปกติ (ยืนยันจากผู้ใช้)
+model ScoreItem {
+  id        Int           @id @default(autoincrement())
+  subjectId Int           @map("subject_id")
+  category  ScoreCategory
+  name      String        @db.VarChar(100)
+  maxScore  Decimal       @map("max_score") @db.Decimal(6, 2)
+  sortOrder Int           @map("sort_order")
+  subject   Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  scores    Score[]
+
+  @@index([subjectId, category, sortOrder])
+  @@map("score_items")
+}
+
+model Score {
+  id          Int       @id @default(autoincrement())
+  scoreItemId Int       @map("score_item_id")
+  studentId   Int       @map("student_id") /// school_app.students.id
+  value       Decimal?  @db.Decimal(6, 2)
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  scoreItem   ScoreItem @relation(fields: [scoreItemId], references: [id], onDelete: Cascade)
+
+  @@unique([scoreItemId, studentId])
+  @@index([studentId])
+  @@map("scores")
+}
+
+/// จำนวนช่องตรงกับคอลัมน์จริงใน template SchoolBright แบบ 1:1
+/// (คุณลักษณะฯ D:W = 20 ช่อง ใช้จริง 8 / อ่านคิดฯ D:H = 5 ช่อง ใช้จริง 3 / สมรรถนะ D:M = 10 ช่อง ใช้จริง 5)
+enum TraitKind {
+  TRAIT_1 // คุณลักษณะอันพึงประสงค์ (0-3)
+  TRAIT_2
+  TRAIT_3
+  TRAIT_4
+  TRAIT_5
+  TRAIT_6
+  TRAIT_7
+  TRAIT_8
+  TRAIT_9
+  TRAIT_10
+  TRAIT_11
+  TRAIT_12
+  TRAIT_13
+  TRAIT_14
+  TRAIT_15
+  TRAIT_16
+  TRAIT_17
+  TRAIT_18
+  TRAIT_19
+  TRAIT_20
+  READ_1 // อ่าน คิดวิเคราะห์ เขียน (0-3)
+  READ_2
+  READ_3
+  READ_4
+  READ_5
+  COMPETENCY_1 // สมรรถนะ (0-3)
+  COMPETENCY_2
+  COMPETENCY_3
+  COMPETENCY_4
+  COMPETENCY_5
+  COMPETENCY_6
+  COMPETENCY_7
+  COMPETENCY_8
+  COMPETENCY_9
+  COMPETENCY_10
+}
+
+model TraitScore {
+  id        Int       @id @default(autoincrement())
+  subjectId Int       @map("subject_id")
+  studentId Int       @map("student_id") /// school_app.students.id
+  kind      TraitKind
+  value     Int? /// 0-3
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  subject   Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([subjectId, studentId, kind])
+  @@index([subjectId, kind])
+  @@map("trait_scores")
+}
