@@ -21,7 +21,7 @@ A web-based student score management and export system for Thai schools — teac
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | Next.js 16 (App Router) |
+| Framework | Next.js 15 (App Router) — Node 18 บน Windows Server 2012 R2 |
 | Language | TypeScript |
 | UI | shadcn/ui + Tailwind CSS v4 |
 | ORM | Prisma 6 |

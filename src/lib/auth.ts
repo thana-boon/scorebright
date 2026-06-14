@@ -2,6 +2,7 @@ import "server-only";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { BASE_PATH } from "@/lib/base-path";
 import {
   SESSION_COOKIE,
   SESSION_HOURS,
@@ -31,21 +32,27 @@ export async function verifyCredentials(
   };
 }
 
+// cookie scope ตาม basePath เพื่อไม่ชนกับเว็บอื่นบนโฮสต์เดียวกัน (เช่น 192.168.200.9)
+const COOKIE_PATH = BASE_PATH || "/";
+// LAN เข้าผ่าน HTTP ไม่มี HTTPS — secure:true จะทำให้ cookie ไม่ถูกส่ง = login พัง
+// เปิด secure เฉพาะเมื่อมี HTTPS จริง (ตั้ง COOKIE_SECURE=true ใน .env)
+const COOKIE_SECURE = process.env.COOKIE_SECURE === "true";
+
 export async function createSession(user: SessionUser): Promise<void> {
   const token = await signSessionToken(user);
   const store = await cookies();
   store.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: COOKIE_SECURE,
     maxAge: SESSION_HOURS * 3600,
-    path: "/",
+    path: COOKIE_PATH,
   });
 }
 
 export async function destroySession(): Promise<void> {
   const store = await cookies();
-  store.delete(SESSION_COOKIE);
+  store.delete({ name: SESSION_COOKIE, path: COOKIE_PATH }); // ต้องระบุ path เดียวกับตอน set
 }
 
 /** session ปัจจุบันจาก cookie — null ถ้ายังไม่ login/หมดอายุ */

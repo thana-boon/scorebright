@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Download, FileSpreadsheet } from "lucide-react";
 import { EXPORT_SECTIONS, SECTION_LABELS, type ExportSection } from "@/lib/export/sections";
+import { BASE_PATH } from "@/lib/base-path";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -28,9 +29,10 @@ export function ExportControls({
 
   const qs =
     selected.size === 0 || allSelected ? "" : `sections=${[...selected].join(",")}`;
-  const zipHref = `/subjects/${subjectId}/export/download${qs ? `?${qs}` : ""}`;
+  // <a download> ต้องเติม basePath เอง (Next ไม่เติมให้ลิงก์ <a> ธรรมดา)
+  const zipHref = `${BASE_PATH}/subjects/${subjectId}/export/download${qs ? `?${qs}` : ""}`;
   const roomHref = (room: number) =>
-    `/subjects/${subjectId}/export/download?room=${room}${qs ? `&${qs}` : ""}`;
+    `${BASE_PATH}/subjects/${subjectId}/export/download?room=${room}${qs ? `&${qs}` : ""}`;
 
   return (
     <div className="space-y-4">
