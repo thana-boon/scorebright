@@ -4,7 +4,7 @@
 import { SignJWT, jwtVerify } from "jose";
 
 export const SESSION_COOKIE = "sb_session";
-export const SESSION_HOURS = 12;
+export const SESSION_MINUTES = 30; // หมดอายุใน 30 นาที (นับจากตอน login)
 
 export interface SessionUser {
   uid: number;
@@ -25,7 +25,7 @@ export async function signSessionToken(user: SessionUser): Promise<string> {
   return new SignJWT({ ...user })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime(`${SESSION_HOURS}h`)
+    .setExpirationTime(`${SESSION_MINUTES}m`)
     .sign(getSecret());
 }
 

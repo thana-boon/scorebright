@@ -32,10 +32,22 @@ function normalizeYear(r: AcademicYear): AcademicYear {
   return { ...r, id: num(r.id), year_be: num(r.year_be), is_active: num(r.is_active) };
 }
 
+/**
+ * ตัด 0 นำหน้าออกจากรหัสนักเรียน — ฐานข้อมูลกลาง pad เป็น 5 หลัก (เช่น "04552")
+ * แต่ SchoolBright ใช้รหัสแบบไม่มี 0 นำหน้า ("4552") ทั้งการแสดงผลและจับคู่ตอน import
+ * กันเคสรหัสเป็น 0 ล้วนด้วยการ fallback กลับเป็นค่าเดิม
+ */
+export function normalizeStudentCode(code: string): string {
+  const trimmed = String(code).trim();
+  const stripped = trimmed.replace(/^0+/, "");
+  return stripped === "" ? trimmed : stripped;
+}
+
 function normalizeStudent(r: Student): Student {
   return {
     ...r,
     id: num(r.id),
+    student_code: normalizeStudentCode(r.student_code),
     class_room: num(r.class_room),
     number_in_room: num(r.number_in_room),
   };

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { BASE_PATH } from "@/lib/base-path";
 import {
   SESSION_COOKIE,
-  SESSION_HOURS,
+  SESSION_MINUTES,
   signSessionToken,
   verifySessionToken,
   type SessionUser,
@@ -45,7 +45,7 @@ export async function createSession(user: SessionUser): Promise<void> {
     httpOnly: true,
     sameSite: "lax",
     secure: COOKIE_SECURE,
-    maxAge: SESSION_HOURS * 3600,
+    maxAge: SESSION_MINUTES * 60,
     path: COOKIE_PATH,
   });
 }

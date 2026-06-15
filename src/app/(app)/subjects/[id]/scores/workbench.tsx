@@ -115,6 +115,7 @@ const Cell = memo(function Cell({
   onChange,
   onKeyDown,
   onPaste,
+  onBlur,
   registerRef,
 }: {
   cellKey: string;
@@ -125,6 +126,7 @@ const Cell = memo(function Cell({
   onChange: (key: string, raw: string, row: number, col: number) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>, row: number, col: number) => void;
   onPaste: (e: React.ClipboardEvent<HTMLInputElement>, row: number, col: number) => void;
+  onBlur: (key: string, raw: string, row: number, col: number) => void;
   registerRef: (row: number, col: number, el: HTMLInputElement | null) => void;
 }) {
   return (
@@ -137,6 +139,7 @@ const Cell = memo(function Cell({
       onChange={(e) => onChange(cellKey, e.target.value, row, col)}
       onKeyDown={(e) => onKeyDown(e, row, col)}
       onPaste={(e) => onPaste(e, row, col)}
+      onBlur={(e) => onBlur(cellKey, e.target.value, row, col)}
       onFocus={(e) => e.target.select()}
       className={cn(
         "h-8 w-16 rounded border bg-background text-center text-sm outline-none",
@@ -305,6 +308,20 @@ export function ScoreWorkbench({
       const col = activeTab.columns[colIdx];
       const student = visibleRows[rowIdx];
       applyCell(key, raw, col, student.id);
+    },
+    [activeTab, visibleRows, applyCell],
+  );
+
+  // เลื่อนออกจากช่อง: ตัด 0 นำหน้าให้เป็นรูปมาตรฐาน (020 → 20, 0.5 คงเดิม) เฉพาะค่าที่ถูกต้อง
+  const handleBlur = useCallback(
+    (key: string, raw: string, rowIdx: number, colIdx: number) => {
+      const col = activeTab.columns[colIdx];
+      const parsed = parseCell(raw, col);
+      if (parsed.error || parsed.value === null || parsed.value === undefined) return;
+      const canonical = String(parsed.value);
+      if (canonical === raw.trim()) return; // ไม่มีอะไรเปลี่ยน
+      const student = visibleRows[rowIdx];
+      applyCell(key, canonical, col, student.id);
     },
     [activeTab, visibleRows, applyCell],
   );
@@ -616,6 +633,7 @@ export function ScoreWorkbench({
                               onChange={handleChange}
                               onKeyDown={handleKeyDown}
                               onPaste={handlePaste}
+                              onBlur={handleBlur}
                               registerRef={registerRef}
                             />
                           </td>
