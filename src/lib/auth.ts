@@ -2,6 +2,7 @@ import "server-only";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { loginTeacher } from "@/lib/teacher-api";
 import { BASE_PATH } from "@/lib/base-path";
 import {
   SESSION_COOKIE,
@@ -20,10 +21,20 @@ export async function verifyCredentials(
 ): Promise<SessionUser | null> {
   const user = await prisma.user.findUnique({ where: { username: username.trim() } });
   if (!user || !user.isActive) return null;
-  // เผื่อ hash สไตล์ PHP ($2y$) ถูก import เข้ามา — bcryptjs ต้องการ prefix $2a$
-  const hash = user.passwordHash.replace(/^\$2y\$/, "$2a$");
-  const ok = await bcrypt.compare(password, hash);
-  if (!ok) return null;
+
+  if (user.source === "teacher_api") {
+    // ครูที่ซิงค์มา — รหัสอยู่ที่ teacher-api (username = teacher_code)
+    const teacher = await loginTeacher(user.username, password);
+    if (!teacher) return null;
+  } else {
+    // บัญชีในระบบเอง — ตรวจด้วย bcrypt
+    if (!user.passwordHash) return null;
+    // เผื่อ hash สไตล์ PHP ($2y$) ถูก import เข้ามา — bcryptjs ต้องการ prefix $2a$
+    const hash = user.passwordHash.replace(/^\$2y\$/, "$2a$");
+    const ok = await bcrypt.compare(password, hash);
+    if (!ok) return null;
+  }
+
   return {
     uid: user.id,
     username: user.username,

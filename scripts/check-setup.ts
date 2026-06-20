@@ -40,8 +40,8 @@ async function main() {
   if (!admin) {
     ok("บัญชี admin (score_app.users)", false, "ไม่พบ — รัน npm run seed:admin");
   } else {
-    const hash = admin.passwordHash.replace(/^\$2y\$/, "$2a$");
-    const match = await bcrypt.compare("admin1234", hash);
+    const hash = (admin.passwordHash ?? "").replace(/^\$2y\$/, "$2a$");
+    const match = hash ? await bcrypt.compare("admin1234", hash) : false;
     ok("admin/admin1234 login ได้", match && admin.isActive);
   }
 

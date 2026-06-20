@@ -5,10 +5,13 @@ import bcrypt from "bcryptjs";
 import { Prisma, type UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth";
+import { listTeachers, teacherDisplayName } from "@/lib/teacher-api";
 
 export interface UserActionState {
   error?: string;
   saved?: boolean;
+  /** ข้อความสรุปผลการซิงค์ (เช่น "เพิ่ม 3 อัปเดต 12 ปิด 1") */
+  summary?: string;
 }
 
 async function requireAdmin() {
@@ -177,6 +180,13 @@ export async function resetPasswordAction(
   formData: FormData,
 ): Promise<UserActionState> {
   await requireAdmin();
+
+  const target = await prisma.user.findUnique({ where: { id: userId } });
+  if (!target) return { error: "ไม่พบผู้ใช้นี้" };
+  if (target.source === "teacher_api") {
+    return { error: "บัญชีครูที่ซิงค์มาใช้รหัสจากระบบกลาง — เปลี่ยนรหัสที่ระบบกลางแทน" };
+  }
+
   const password = String(formData.get("password") ?? "");
   const pwError = validatePassword(password);
   if (pwError) return { error: pwError };
@@ -187,4 +197,95 @@ export async function resetPasswordAction(
   });
   revalidatePath("/users");
   return { saved: true };
+}
+
+/**
+ * ซิงค์รายชื่อครูจาก teacher-api เข้าตาราง users (source = teacher_api)
+ * - ครูใหม่: สร้างบัญชี role = staff, isActive = true, username = teacher_code
+ * - ครูเดิม: อัปเดตชื่อที่แสดง + เปิดใช้งานกลับ — ไม่แตะ role ที่ admin ตั้งไว้
+ * - ครูที่หายไปจาก API: ปิดใช้งาน (ไม่ลบ — วิชา/คะแนนยังอยู่ครบ)
+ * บัญชี source = local (เช่น admin ที่สร้างเอง) ไม่ถูกแตะต้อง
+ */
+export async function syncTeachersAction(
+  _prev: UserActionState,
+  _formData: FormData,
+): Promise<UserActionState> {
+  await requireAdmin();
+
+  let teachers;
+  try {
+    teachers = await listTeachers();
+  } catch (err) {
+    console.error("syncTeachers: API error", err);
+    return { error: "เชื่อมต่อ teacher-api ไม่ได้ ตรวจ TEACHER_API_BASE_URL / TEACHER_API_KEY ใน .env" };
+  }
+
+  const allUsers = await prisma.user.findMany();
+  const existing = allUsers.filter((u) => u.source === "teacher_api");
+  const existingByCode = new Map(existing.map((u) => [u.username, u]));
+  // username ที่ถูกบัญชี local จองไว้ (กันไม่ให้ sync ไปทับบัญชีที่สร้างเอง)
+  const localUsernames = new Set(allUsers.filter((u) => u.source === "local").map((u) => u.username));
+  const apiCodes = new Set<string>();
+
+  let created = 0;
+  let updated = 0;
+  let deactivated = 0;
+  let skipped = 0;
+
+  // ครูรหัสขึ้นต้น A ไม่มีรหัสผ่านในระบบกลาง → login ไม่ได้ ไม่ต้องสร้างบัญชี
+  const loginable = teachers.filter((t) => !/^a/i.test(t.teacher_code.trim()));
+
+  try {
+    for (const t of loginable) {
+      const code = t.teacher_code.trim();
+      if (!code) continue;
+      apiCodes.add(code);
+      const displayName = teacherDisplayName(t).slice(0, 100);
+      const current = existingByCode.get(code);
+
+      if (!current) {
+        if (localUsernames.has(code)) {
+          // มีบัญชีในระบบที่ใช้ username นี้อยู่แล้ว — ข้าม ไม่ทับ
+          skipped += 1;
+          continue;
+        }
+        await prisma.user.create({
+          data: {
+            username: code,
+            displayName,
+            passwordHash: null,
+            role: "staff",
+            source: "teacher_api",
+            isActive: true,
+          },
+        });
+        created += 1;
+      } else if (current.displayName !== displayName || !current.isActive) {
+        // อัปเดตชื่อ + เปิดใช้งานกลับ แต่คง role เดิมเสมอ
+        await prisma.user.update({
+          where: { id: current.id },
+          data: { displayName, isActive: true },
+        });
+        updated += 1;
+      }
+    }
+
+    // ครูที่ไม่อยู่ใน API แล้ว → ปิดใช้งาน (เฉพาะที่ยังเปิดอยู่)
+    for (const u of existing) {
+      if (!apiCodes.has(u.username) && u.isActive) {
+        await prisma.user.update({ where: { id: u.id }, data: { isActive: false } });
+        deactivated += 1;
+      }
+    }
+  } catch (err) {
+    console.error("syncTeachers: db error", err);
+    return { error: "บันทึกผลซิงค์ไม่สำเร็จ" };
+  }
+
+  revalidatePath("/users");
+  const skippedNote = skipped > 0 ? ` ข้าม ${skipped} (ชื่อซ้ำบัญชีเดิม)` : "";
+  return {
+    saved: true,
+    summary: `ซิงค์สำเร็จ — เพิ่ม ${created} อัปเดต ${updated} ปิดใช้งาน ${deactivated}${skippedNote} (ครูที่ login ได้ ${loginable.length} จากทั้งหมด ${teachers.length} คน)`,
+  };
 }

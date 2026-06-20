@@ -1,12 +1,13 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { UserPlus, KeyRound, Pencil, Trash2 } from "lucide-react";
+import { UserPlus, KeyRound, Pencil, Trash2, RefreshCw } from "lucide-react";
 import {
   createUserAction,
   updateUserAction,
   resetPasswordAction,
   deleteUserAction,
+  syncTeachersAction,
   type UserActionState,
 } from "./actions";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ export interface UserRow {
   username: string;
   displayName: string;
   role: "admin" | "staff";
+  source: "local" | "teacher_api";
   isActive: boolean;
   subjectCount: number;
   createdAt: string;
@@ -106,6 +108,53 @@ export function CreateUserDialog() {
   );
 }
 
+export function SyncTeachersButton() {
+  const [state, formAction, pending] = useActionState<UserActionState, FormData>(
+    syncTeachersAction,
+    {},
+  );
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline">
+          <RefreshCw className="me-1 size-4" /> ซิงค์ครูจากระบบกลาง
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>ซิงค์รายชื่อครูจากระบบกลาง</DialogTitle>
+          <DialogDescription>
+            ดึงรายชื่อครูจาก teacher-api เข้ามาเป็นบัญชีในระบบ — ครูใหม่จะได้สิทธิ์ “ครู”
+            สิทธิ์ที่เคยตั้งไว้จะไม่ถูกเปลี่ยน และครูที่ถูกลบจากระบบกลางจะถูกปิดใช้งาน (ข้อมูลยังอยู่)
+          </DialogDescription>
+        </DialogHeader>
+        <form action={formAction} className="space-y-3">
+          {state.error && (
+            <Alert variant="destructive">
+              <AlertDescription>{state.error}</AlertDescription>
+            </Alert>
+          )}
+          {state.summary && (
+            <Alert>
+              <AlertDescription>{state.summary}</AlertDescription>
+            </Alert>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
+              ปิด
+            </Button>
+            <Button type="submit" disabled={pending}>
+              {pending ? "กำลังซิงค์…" : "เริ่มซิงค์"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function EditUserDialog({ user, selfId }: { user: UserRow; selfId: number }) {
   const action = updateUserAction.bind(null, user.id);
   const [state, formAction, pending] = useActionState<UserActionState, FormData>(action, {});
@@ -114,6 +163,7 @@ function EditUserDialog({ user, selfId }: { user: UserRow; selfId: number }) {
     if (state.saved) setOpen(false);
   }, [state]);
   const isSelf = user.id === selfId;
+  const isSynced = user.source === "teacher_api";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -126,12 +176,23 @@ function EditUserDialog({ user, selfId }: { user: UserRow; selfId: number }) {
         <DialogHeader>
           <DialogTitle>แก้ไข {user.username}</DialogTitle>
           {isSelf && <DialogDescription>บัญชีของตัวเอง — ลดสิทธิ์/ปิดใช้งานไม่ได้</DialogDescription>}
+          {isSynced && !isSelf && (
+            <DialogDescription>บัญชีครูที่ซิงค์มา — ชื่อมาจากระบบกลาง ตั้งได้แค่สิทธิ์</DialogDescription>
+          )}
         </DialogHeader>
         <form action={formAction} className="space-y-3">
           <FormAlert state={state} />
           <div className="space-y-1.5">
             <Label htmlFor={`eu-display-${user.id}`}>ชื่อที่แสดง</Label>
-            <Input id={`eu-display-${user.id}`} name="displayName" defaultValue={user.displayName} required maxLength={100} />
+            <Input
+              id={`eu-display-${user.id}`}
+              name="displayName"
+              defaultValue={user.displayName}
+              required
+              maxLength={100}
+              readOnly={isSynced}
+              className={isSynced ? "bg-muted text-muted-foreground" : undefined}
+            />
           </div>
           <label className="flex items-center gap-2 text-sm">
             <Checkbox name="role" value="admin" defaultChecked={user.role === "admin"} disabled={isSelf} />
@@ -293,6 +354,9 @@ export function UsersTable({ users, selfId }: { users: UserRow[]; selfId: number
             <TableCell className="font-medium">
               {u.username}
               {u.id === selfId && <span className="ms-1 text-xs text-muted-foreground">(คุณ)</span>}
+              {u.source === "teacher_api" && (
+                <span className="ms-1 text-xs text-muted-foreground">(ระบบกลาง)</span>
+              )}
             </TableCell>
             <TableCell>{u.displayName}</TableCell>
             <TableCell>
@@ -309,7 +373,7 @@ export function UsersTable({ users, selfId }: { users: UserRow[]; selfId: number
             <TableCell>
               <div className="flex justify-end">
                 <EditUserDialog user={u} selfId={selfId} />
-                <ResetPasswordDialog user={u} />
+                {u.source === "local" && <ResetPasswordDialog user={u} />}
                 {u.id !== selfId && (
                   <DeleteUserDialog
                     user={u}

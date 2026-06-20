@@ -15,16 +15,23 @@ enum UserRole {
   staff
 }
 
+/// ที่มาของบัญชี — กำหนดวิธีตรวจรหัสผ่านตอน login
+enum UserSource {
+  local /// บัญชีที่สร้างในระบบเอง — ตรวจรหัสด้วย bcrypt ในตาราง users นี้
+  teacher_api /// ครูที่ซิงค์มาจาก teacher-api — proxy ตรวจรหัสไปที่ /api/auth/login
+}
+
 /// บัญชีผู้ใช้ของ ScoreBright เอง (แยกจาก school_app.users โดยสิ้นเชิง)
 model User {
-  id           Int      @id @default(autoincrement())
-  username     String   @unique @db.VarChar(50)
-  passwordHash String   @map("password_hash") @db.VarChar(255)
-  displayName  String   @map("display_name") @db.VarChar(100)
-  role         UserRole @default(staff)
-  isActive     Boolean  @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id           Int        @id @default(autoincrement())
+  username     String     @unique @db.VarChar(50) /// บัญชี teacher_api: = teacher_code (เช่น T00241)
+  passwordHash String?    @map("password_hash") @db.VarChar(255) /// null สำหรับบัญชี teacher_api (รหัสอยู่ที่ teacher-api)
+  displayName  String     @map("display_name") @db.VarChar(100)
+  role         UserRole   @default(staff)
+  source       UserSource @default(local)
+  isActive     Boolean    @default(true) @map("is_active")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
 
   subjects Subject[]
 

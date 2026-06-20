@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { CreateUserDialog, UsersTable } from "./users-client";
+import { CreateUserDialog, SyncTeachersButton, UsersTable } from "./users-client";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,10 @@ export default async function UsersPage() {
             บัญชีของระบบ ScoreBright — ครูแต่ละคนเห็นเฉพาะวิชาของตัวเอง
           </p>
         </div>
-        <CreateUserDialog />
+        <div className="flex gap-2">
+          <SyncTeachersButton />
+          <CreateUserDialog />
+        </div>
       </div>
 
       <Card>
@@ -42,6 +45,7 @@ export default async function UsersPage() {
               username: u.username,
               displayName: u.displayName,
               role: u.role,
+              source: u.source,
               isActive: u.isActive,
               subjectCount: u._count.subjects,
               createdAt: u.createdAt.toISOString(),
