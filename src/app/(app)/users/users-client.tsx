@@ -1,11 +1,12 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { UserPlus, KeyRound, Pencil } from "lucide-react";
+import { UserPlus, KeyRound, Pencil, Trash2 } from "lucide-react";
 import {
   createUserAction,
   updateUserAction,
   resetPasswordAction,
+  deleteUserAction,
   type UserActionState,
 } from "./actions";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,13 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -181,6 +189,91 @@ function ResetPasswordDialog({ user }: { user: UserRow }) {
   );
 }
 
+function DeleteUserDialog({
+  user,
+  candidates,
+}: {
+  user: UserRow;
+  /** ครูที่ใช้งานได้คนอื่น ๆ ที่จะรับช่วงดูแลวิชาแทนได้ */
+  candidates: UserRow[];
+}) {
+  const action = deleteUserAction.bind(null, user.id);
+  const [state, formAction, pending] = useActionState<UserActionState, FormData>(action, {});
+  const [open, setOpen] = useState(false);
+  const [reassignTo, setReassignTo] = useState("");
+  useEffect(() => {
+    if (state.saved) setOpen(false);
+  }, [state]);
+  // เปิดใหม่ทุกครั้งให้เริ่มจากยังไม่เลือกผู้รับช่วง
+  useEffect(() => {
+    if (open) setReassignTo("");
+  }, [open]);
+
+  const hasSubjects = user.subjectCount > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" title="ลบ" className="text-destructive hover:text-destructive">
+          <Trash2 className="size-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>ลบผู้ใช้ — {user.username}</DialogTitle>
+          <DialogDescription>
+            {hasSubjects
+              ? `ผู้ใช้นี้สร้างวิชาไว้ ${user.subjectCount} วิชา และมีการทำคะแนนแล้ว ต้องการลบใช่หรือไม่?`
+              : "การลบบัญชีนี้ทำถาวร ย้อนกลับไม่ได้"}
+          </DialogDescription>
+        </DialogHeader>
+        <form action={formAction} className="space-y-3">
+          <FormAlert state={state} />
+          {hasSubjects && (
+            <>
+              <input type="hidden" name="reassignTo" value={reassignTo} />
+              <div className="space-y-1.5">
+                <Label>ให้ครูคนอื่นดูแลวิชาแทนหรือไม่</Label>
+                <Select value={reassignTo} onValueChange={setReassignTo}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="— ไม่โอน (จะลบวิชาและคะแนนทั้งหมด) —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {candidates.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.displayName} ({c.username})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {reassignTo
+                    ? "วิชาและคะแนนทั้งหมดจะถูกโอนไปให้ครูที่เลือก"
+                    : "ถ้าไม่เลือก เมื่อกดลบ ระบบจะลบวิชาและคะแนนของครูคนนี้ทั้งหมด"}
+                </p>
+              </div>
+            </>
+          )}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
+              ยกเลิก
+            </Button>
+            <Button type="submit" variant="destructive" disabled={pending}>
+              {pending
+                ? "กำลังลบ…"
+                : hasSubjects && reassignTo
+                  ? "โอนวิชาแล้วลบผู้ใช้"
+                  : hasSubjects
+                    ? "ลบผู้ใช้และคะแนนทั้งหมด"
+                    : "ลบผู้ใช้"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function UsersTable({ users, selfId }: { users: UserRow[]; selfId: number }) {
   return (
     <Table>
@@ -191,7 +284,7 @@ export function UsersTable({ users, selfId }: { users: UserRow[]; selfId: number
           <TableHead>สิทธิ์</TableHead>
           <TableHead>สถานะ</TableHead>
           <TableHead className="text-right">วิชา</TableHead>
-          <TableHead className="w-24"></TableHead>
+          <TableHead className="w-32"></TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -217,6 +310,12 @@ export function UsersTable({ users, selfId }: { users: UserRow[]; selfId: number
               <div className="flex justify-end">
                 <EditUserDialog user={u} selfId={selfId} />
                 <ResetPasswordDialog user={u} />
+                {u.id !== selfId && (
+                  <DeleteUserDialog
+                    user={u}
+                    candidates={users.filter((c) => c.id !== u.id && c.isActive)}
+                  />
+                )}
               </div>
             </TableCell>
           </TableRow>

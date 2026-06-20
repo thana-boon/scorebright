@@ -107,6 +107,70 @@ export async function updateUserAction(
   return { saved: true };
 }
 
+export async function deleteUserAction(
+  userId: number,
+  _prev: UserActionState,
+  formData: FormData,
+): Promise<UserActionState> {
+  const session = await requireAdmin();
+
+  if (userId === session.uid) {
+    return { error: "ลบบัญชีของตัวเองไม่ได้" };
+  }
+
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { _count: { select: { subjects: true } } },
+  });
+  if (!target) return { error: "ไม่พบผู้ใช้นี้ (อาจถูกลบไปแล้ว)" };
+
+  if (target.role === "admin") {
+    const otherAdmins = await prisma.user.count({
+      where: { role: "admin", isActive: true, id: { not: userId } },
+    });
+    if (otherAdmins === 0) {
+      return { error: "ระบบต้องมีผู้ดูแลระบบที่ใช้งานได้อย่างน้อย 1 คน" };
+    }
+  }
+
+  // ค่าว่าง = ลบวิชาและคะแนนทั้งหมดทิ้ง / มีค่า = โอนวิชาให้ครูคนอื่นดูแลแทน
+  const raw = String(formData.get("reassignTo") ?? "").trim();
+  const reassignTo = raw ? Number(raw) : null;
+
+  if (reassignTo !== null) {
+    if (!Number.isInteger(reassignTo) || reassignTo === userId) {
+      return { error: "ผู้รับช่วงวิชาไม่ถูกต้อง" };
+    }
+    const newOwner = await prisma.user.findUnique({ where: { id: reassignTo } });
+    if (!newOwner) return { error: "ไม่พบผู้ใช้ที่จะรับช่วงวิชา" };
+  }
+
+  try {
+    if (reassignTo !== null) {
+      // โอนวิชาให้ครูคนใหม่ก่อน แล้วค่อยลบบัญชี — คะแนนเดิมยังอยู่ครบ
+      await prisma.$transaction([
+        prisma.subject.updateMany({
+          where: { teacherId: userId },
+          data: { teacherId: reassignTo },
+        }),
+        prisma.user.delete({ where: { id: userId } }),
+      ]);
+    } else {
+      // ลบวิชาทั้งหมด (cascade ลบ rooms/config/items/scores/traits) แล้วลบบัญชี
+      await prisma.$transaction([
+        prisma.subject.deleteMany({ where: { teacherId: userId } }),
+        prisma.user.delete({ where: { id: userId } }),
+      ]);
+    }
+  } catch (err) {
+    console.error("deleteUser:", err);
+    return { error: "ลบไม่สำเร็จ" };
+  }
+
+  revalidatePath("/users");
+  return { saved: true };
+}
+
 export async function resetPasswordAction(
   userId: number,
   _prev: UserActionState,
