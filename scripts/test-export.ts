@@ -167,7 +167,7 @@ async function main() {
   };
   console.log("\nเคส export เฉพาะอ่านคิดวิเคราะห์:");
   expect2(SHEET.ratio, "A3", null, "สัดส่วนว่างตาม template");
-  expect2(SHEET.beforeMid, "D3", null, "demo 'ตัวอย่าง' ถูกเคลียร์แม้ไม่มีหัวข้อ");
+  expect2(SHEET.beforeMid, "D3", 1, "demo 'ตัวอย่าง' ถูกแทนด้วยเลข 1 เมื่อไม่มีหัวข้อ");
   expect2(SHEET.beforeMid, "D4", null, "demo คะแนนเต็ม 10 ถูกเคลียร์");
   expect2(SHEET.beforeMid, "B5", "4650", "รหัสนักเรียนยังอยู่ (key สำหรับจับคู่)");
   expect2(SHEET.beforeMid, "D5", null, "คะแนนเก็บว่าง");

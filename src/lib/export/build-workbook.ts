@@ -126,7 +126,9 @@ function writeScoreSheet(
   }
 
   if (hasDemoHeader && items.length === 0) {
-    setCell(ws, `D${HEADER_ROW}`, null);
+    // หัวข้อ "ตัวอย่าง" → เติมเลข 1 (เลขลำดับคอลัมน์แรก ตามแบบคอลัมน์ถัดไป 2,3,4…) แทนการเคลียร์
+    setCell(ws, `D${HEADER_ROW}`, 1);
+    // คะแนนเต็ม (10) ยังเอาออกเหมือนเดิม
     setCell(ws, `D${MAX_ROW}`, null);
   }
 
